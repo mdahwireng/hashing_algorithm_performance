@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:latest
+    restart: always
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - startup_sql:/docker-entrypoint-initdb.d/
+    ports:
+      - "5439:5432"
+  
+  dataloader:
+    image: python:3.12-slim
+    depends_on:
+      - db
+    volumes:
+      - ./dataloader:/app
+    working_dir: /app
+    command: 
+      - bash -c "pip install -r requirements.txt"
+      - bash -c "python main.py"
+
+
+
+
+volumes:
+  db_data:
+    driver: local
+  startup_sql:
+    driver: local
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+
