@@ -17,7 +17,7 @@ services:
     depends_on:
       - db
     volumes:
-      - ./dataloader:/app
+      - dataloader:/app
     working_dir: /app
     command: 
       - bash -c "pip install -r requirements.txt"
@@ -27,6 +27,8 @@ services:
 
 
 volumes:
+  dataloader:
+    driver: local
   db_data:
     driver: local
   startup_sql:
