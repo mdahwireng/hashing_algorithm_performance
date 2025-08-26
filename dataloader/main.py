@@ -8,7 +8,7 @@ import pandas as pd
 
 
 
-dotenv.load_dotenv(dotenv_path='./dataloader/data/.env')
+dotenv.load_dotenv(dotenv_path='./data/.env')
 
 db_user = os.getenv('DB_USER')
 db_host = os.getenv('DB_HOST')
@@ -65,7 +65,13 @@ with open('/run/secrets/db_password', 'r') as f:
     db_password = f.read().strip()
 
 # create a database connection
+print("Establishing database connection...")
 conn = create_db_connection(db_user, db_password, db_host, db_port, db_name)
+
+
+if not conn:
+    print("Failed to connect to the database. Exiting...")
+    sys.exit(1)
 
 passwords_count = query_table_count(conn, 'passwords')
 sequences_count = query_table_count(conn, 'sequences')

@@ -3,7 +3,7 @@ import random
 import string
 import pickle
 from zxcvbn import zxcvbn
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 import pandas as pd
 
 def run_zxcvbn(psswd):
@@ -128,6 +128,7 @@ def create_db_connection(user, password, host, port, database):
         print(f"Error connecting to the database: {e}")
         return None
     
+    
 def get_db_password(secret_path='/run/secrets/db_password'):
     """
     Reads the database password from a secure file.
@@ -144,7 +145,7 @@ def get_db_password(secret_path='/run/secrets/db_password'):
         return db_password
     except Exception as e:
         print(f"Error reading database password from '{secret_path}': {e}")
-        return None
+        exit(1)
 
 def query_table_count(connection, table_name):
     """
@@ -158,14 +159,15 @@ def query_table_count(connection, table_name):
         int: The total number of records in the table.
     """
     try:
-        sql_str = "SELECT COUNT(*) FROM :table_name"
-        result = connection.execute(sql_str, {"table_name":table_name})
+        sql_str = sql_str = text(f"SELECT COUNT(*) FROM {table_name}")
+        result = connection.execute(sql_str)
         count = result.scalar()
         print(f"Total records in '{table_name}': {count}")
         return count
     except Exception as e:
         print(f"Error querying table '{table_name}': {e}")
-        return None
+        exit(1)
+        
     
 def get_passwords_pk(connection, table_name):
     """
@@ -179,11 +181,11 @@ def get_passwords_pk(connection, table_name):
         list of tuples: A list of tuples containing primary keys and passwords.
     """
     try:
-        sql_str = "SELECT :id, :columns FROM :table_name"
-        result = connection.execute(sql_str, {"table_name":table_name, "id":"id", "columns":"passwords"})
+        sql_str = text(f"SELECT id, passwords FROM {table_name}")
+        result = connection.execute(sql_str)
         passwords = result.fetchall()
         print(f"Retrieved {len(passwords)} passwords from '{table_name}'.")
         return passwords
     except Exception as e:
         print(f"Error retrieving passwords from table '{table_name}': {e}")
-        return None
+        exit(1)

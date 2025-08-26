@@ -8,31 +8,31 @@ services:
       - db_password
     volumes:
       - db_data:/var/lib/postgresql/data
-      - startup_sql:/docker-entrypoint-initdb.d/
+      - ./startup_sql:/docker-entrypoint-initdb.d/
     ports:
       - "5439:5432"
   
   dataloader:
     image: python:3.12-slim
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      
     depends_on:
       - db
     volumes:
-      - dataloader:/app
+      - ./dataloader:/app
     working_dir: /app
-    command: 
-      - bash -c "pip install -r requirements.txt"
-      - bash -c "python main.py"
-
+    command: sh -c "pip install -r requirements.txt && python main.py"
 
 
 
 volumes:
-  dataloader:
-    driver: local
   db_data:
     driver: local
-  startup_sql:
-    driver: local
+
+    
 secrets:
   db_password:
     file: ./secrets/db_password.txt
