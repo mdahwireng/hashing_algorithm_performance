@@ -181,7 +181,7 @@ def get_passwords_pk(connection, table_name):
         list of tuples: A list of tuples containing primary keys and passwords.
     """
     try:
-        sql_str = text(f"SELECT id, passwords FROM {table_name}")
+        sql_str = text(f"SELECT id, password FROM {table_name}")
         result = connection.execute(sql_str)
         passwords = result.fetchall()
         print(f"Retrieved {len(passwords)} passwords from '{table_name}'.")

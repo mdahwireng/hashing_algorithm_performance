@@ -22,7 +22,9 @@ def load_to_db(root_path, outputs_str, conn):
     print("Loading pickled data...")
     dataframes = {}
     for name in outputs_str:
-        df = pickle_dataframe(f"{root_path}/{name}.pkl", mode='load')
+        print(f"Loading DataFrame '{name}' from pickle file...")
+        print(f"File path: {root_path}{name}.pkl")
+        df = pickle_dataframe(dataframe=None, filepath=f"{root_path}{name}.pkl", mode='load')
         if df is not None:
             dataframes[name] = df
         else:
@@ -30,21 +32,32 @@ def load_to_db(root_path, outputs_str, conn):
             sys.exit(1)
     print("All DataFrames loaded successfully from pickle files.")
 
+    # if password_df has passwords column, rename it to password
+    print("Checking and renaming columns if necessary...")
+    if 'passwords' in dataframes['password_df'].columns:
+        dataframes['password_df'].rename(columns={'passwords': 'password'}, inplace=True)
+    
     # load passwords_df to db
     print("Loading DataFrames into the database...")
     print("Populating the passwords table in the database...")
     dataframes['password_df'].to_sql('passwords', conn, if_exists='append', index=False)
+    conn.commit()
 
     # get passwords ids 
-    passwords_ids_df = pd.DataFrame(get_passwords_pk(conn, 'passwords'), columns=['password_id', 'passwords'])
+    passwords_ids_df = pd.DataFrame(get_passwords_pk(conn, 'passwords'), columns=['password_id', 'password'])
 
     # merge sequences_password_df with passwords_ids_df to get password_id
-    dataframes['sequences_password_df'] = dataframes['sequences_password_df'].merge(passwords_ids_df, on='passwords', how='left')
+    dataframes['sequences_password_df'] = dataframes['sequences_password_df'].merge(passwords_ids_df, on='password', how='left')
+
     dataframes['sequences_password_df'] = dataframes['sequences_password_df'][['password_id', 'pattern', 'token', 'guesses_log10']]
+
+    dataframes['sequences_password_df'].dropna(inplace=True)
+
 
     # load sequences_password_df to db
     print("Populating the sequences table in the database...")
     dataframes['sequences_password_df'].to_sql('sequences', conn, if_exists='append', index=False)
+    conn.commit()
     print("DataFrames successfully loaded into the database.")
 
 

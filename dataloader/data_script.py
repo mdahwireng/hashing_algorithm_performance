@@ -22,7 +22,7 @@ max_length = 20
 # Simulate passwords
 pswds_sim = simulate_passwords(num_passwords, min_length, max_length)
 
-source_sim = ["simulated" for i in pswds_sim]
+source_sim = ["simulated passwords" for i in pswds_sim]
 
 sp_chars = ['ñ', 'ๅ', 'ภ', 'ถ', 'ุ', 'ç', 'Ñ', 'ึ', 'ค', 'ต', 'ó', '●', 'é', 'ส', 'น', 'อ', 'ำ', 'ั', 'ี', 'ย', 'ฟ', 'ห', 'ไ', 'พ', 'ก', 'ü', 'จ', 'ß', 'ş', 'ı', 'ะ', '้', 'ร', 'ื', 'ด', '่', 'า', 'ว', 'แ', 'á', 'เ', 'ง', 'ö', '´']
 
@@ -37,7 +37,7 @@ source_leaked = ["leaked gmail passwords" for i in pswds_leaked]
 logging.info("Reading rockyou passwords from file...")
 pswds_rock = read_file("./data/rockyou.txt")
 pswds_rock, rmv_rock = find_non_ascii_char(pswds_rock,sp_chars)
-source_rock = ["leaked gmail passwords" for i in pswds_rock]
+source_rock = ["rockyou passwords" for i in pswds_rock]
 
 
 # combine all passwords
@@ -80,6 +80,9 @@ zxcvbn_password_df = pd.DataFrame(zxcvbn_output[zxcvbn_output_keys[0]])
 # dataframe for zxcvbn output for squences
 sequences_password_df = pd.DataFrame(zxcvbn_output[zxcvbn_output_keys[1]])
 
+sequences_password_df.dropna(inplace=True)
+sequences_password_df.reset_index(drop=True, inplace=True)
+
 
 logging.info(f"Zxcvbn password DataFrame shape: {zxcvbn_password_df.shape}")
 logging.info(f"Zxcvbn sequences DataFrame shape: {sequences_password_df.shape}")
@@ -92,7 +95,7 @@ zxcvbn_password_df['entropy'] = zxcvbn_password_df['guesses'].apply(lambda x : m
 
 # merge with password_df
 logging.info("Merging zxcvbn password DataFrame with password_df...")
-password_table_cols = ['passwords',
+password_table_cols = ['password',
                          'source',
                          'password_len',
                          'guesses',
@@ -107,12 +110,12 @@ password_df = password_df.merge(zxcvbn_password_df, left_on=['passwords'], right
 
 # calculate the bytes of the passwords
 logging.info("Calculating bytes of passwords...")
-password_df['size_byte'] = password_df['passwords'].apply(lambda x : len(x.encode('UTF-8')) if x else None)
+password_df['size_byte'] = password_df['password'].apply(lambda x : len(x.encode('UTF-8')) if x else None)
 
 
 # calculate calc_time in microsecs
 logging.info("Calculating calc_time in microseconds...")
-password_df['calc_time_micros'] = password_df['calc_time'].apply(lambda x : x*1e6 if x else None)
+password_df['calc_time_micros'] = password_df['calc_time'].dt.total_seconds() * 1000000
 password_df.drop(columns=['calc_time'], inplace=True)
 
 # serialize outputs password_df, sesquences_password_df, spsp_chars, rmv_leaked, rmv_rock

@@ -6,7 +6,7 @@ CREATE DATABASE hash_store;
 -- Ensure the 'passwords' table is created only if it doesn't already exist.
 CREATE TABLE IF NOT EXISTS "passwords" (
   "id" BIGSERIAL PRIMARY KEY,
-  "passwords" TEXT NOT NULL,
+  "password" TEXT NOT NULL,
   "source" TEXT,
   "password_len" INT NOT NULL,
   "guesses" NUMERIC,
