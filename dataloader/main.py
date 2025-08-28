@@ -58,6 +58,7 @@ def load_to_db(root_path, outputs_str, conn):
     print("Populating the sequences table in the database...")
     dataframes['sequences_password_df'].to_sql('sequences', conn, if_exists='append', index=False)
     conn.commit()
+    conn.close()
     print("DataFrames successfully loaded into the database.")
 
 
@@ -74,8 +75,10 @@ outputs_str = ['password_df', 'sequences_password_df', 'sp_chars', 'rmv_leaked',
 
 
 # read the database password from the secrets file
-with open('/run/secrets/db_password', 'r') as f:
-    db_password = f.read().strip()
+# with open('/run/secrets/db_password', 'r') as f:
+#     db_password = f.read().strip()
+
+db_password = get_db_password()
 
 # create a database connection
 print("Establishing database connection...")
@@ -111,3 +114,5 @@ elif (files_exist and not data_in_db):
     load_to_db(root_path, outputs_str, conn)
 elif data_in_db:
     print("Data already exists in the database. No action needed.")
+
+subprocess.run(['python3', 'algo_loader.py'], stdout=sys.stdout, stderr=sys.stderr, check=True)
