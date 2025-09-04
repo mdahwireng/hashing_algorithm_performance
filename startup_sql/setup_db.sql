@@ -53,6 +53,21 @@ CREATE TABLE IF NOT EXISTS "algorithm_configurations" (
   "parameters_json" JSONB NOT NULL
 );
 
+-- Ensure the 'comparisons' table is created only if it doesn't already exist.
+CREATE TABLE IF NOT EXISTS "comparisons" (
+  "id" BIGSERIAL PRIMARY KEY,
+  "name" TEXT UNIQUE NOT NULL,
+  "description" TEXT
+);
+
+-- Ensure the 'comparison_algo_configs' table is created only if it doesn't already exist.
+-- This is a join table between comparisons and algorithm_configurations.
+CREATE TABLE IF NOT EXISTS "comparison_algo_configs" (
+  "comp_id" BIGINT NOT NULL,
+  "algo_config_id" BIGINT NOT NULL,
+  PRIMARY KEY ("comp_id", "algo_config_id")
+);
+
 -- Ensure the 'hash_generations' table is created only if it doesn't already exist.
 CREATE TABLE IF NOT EXISTS "hash_generations" (
   "id" BIGSERIAL PRIMARY KEY,
@@ -121,6 +136,32 @@ BEGIN
         WHERE  conname = 'algorithm_configurations_algorithm_id_fkey'
     ) THEN
         ALTER TABLE "algorithm_configurations" ADD FOREIGN KEY ("algorithm_id") REFERENCES "algorithms" ("id");
+    END IF;
+END
+$$;
+
+-- Check and add foreign key for comparison_algo_configs table (comp_id)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM   pg_constraint
+        WHERE  conname = 'comparison_algo_configs_comp_id_fkey'
+    ) THEN
+        ALTER TABLE "comparison_algo_configs" ADD FOREIGN KEY ("comp_id") REFERENCES "comparisons" ("id");
+    END IF;
+END
+$$;
+
+-- Check and add foreign key for comparison_algo_configs table (algo_config_id)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM   pg_constraint
+        WHERE  conname = 'comparison_algo_configs_algo_config_id_fkey'
+    ) THEN
+        ALTER TABLE "comparison_algo_configs" ADD FOREIGN KEY ("algo_config_id") REFERENCES "algorithm_configurations" ("id");
     END IF;
 END
 $$;
