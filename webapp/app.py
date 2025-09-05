@@ -186,6 +186,14 @@ def comparisons():
                     """
                 ), {"comp_id": comp_id, "alg_config_id": alg_config_id})
 
+                # Register an experiment run for this configuration
+                conn.execute(text(
+                    """
+                    INSERT INTO experiment_runs(alg_config_id, status, description)
+                    VALUES (:alg_config_id, 'registered', :desc)
+                    """
+                ), {"alg_config_id": alg_config_id, "desc": f"Registered for comparison {name}"})
+
         flash("Comparison saved with algorithm parameters.", "success")
         return redirect(url_for("comparisons"))
 

@@ -39,11 +39,12 @@ CREATE TABLE IF NOT EXISTS "algorithms" (
 CREATE TABLE IF NOT EXISTS "experiment_runs" (
   "id" BIGSERIAL PRIMARY KEY,
   "alg_config_id" BIGINT NOT NULL,
-  "start_time" TIMESTAMPTZ NOT NULL,
+  "start_time" TIMESTAMPTZ,
   "end_time" TIMESTAMPTZ,
-  "status" TEXT NOT NULL,
+  "status" TEXT,  --'registered' OR 'running' OR 'completed' OR 'failed'
   "description" TEXT,
-  "hardware_info" JSONB
+  "hardware_info" JSONB,
+  "remark" TEXT
 );
 
 -- Ensure the 'algorithm_configurations' table is created only if it doesn't already exist.
