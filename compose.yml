@@ -26,6 +26,27 @@ services:
     working_dir: /app
     command: sh -c "pip install -r requirements.txt && python main.py"
 
+  web:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+    depends_on:
+      - dataloader
+    volumes:
+      - ./webapp:/app
+      - ./README.md:/app/README.md:ro
+    working_dir: /app
+    ports:
+      - "8085:8080"
+    command: sh -c "pip install -r requirements.txt && python app.py"
+
 
 
 volumes:

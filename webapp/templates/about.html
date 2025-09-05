@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-4">
+    <h5>System ERD</h5>
+    <img class="img-fluid border rounded w-100" src="/static/erd.png" alt="ERD" loading="lazy" onerror="this.style.display='none'" />
+    <div class="mt-3">
+      <div class="card">
+        <div class="card-body">
+          <h6 class="card-title">Project quick facts</h6>
+          <ul class="mb-0">
+            <li>Postgres-backed</li>
+            <li>Docker Compose orchestration</li>
+            <li>Flask UI for comparisons</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <h2 class="mb-3">About this project</h2>
+    {% if readme_markdown %}
+      <pre class="p-3 bg-white border rounded" style="white-space: pre-wrap;">{{ readme_markdown }}</pre>
+    {% else %}
+      <p class="text-muted">README could not be loaded.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+
