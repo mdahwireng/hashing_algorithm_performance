@@ -10,7 +10,7 @@ algorithms = [
     {
         "algorithm": "bcrypt",
         "parameters": {
-            "password_plaintext": "The password string to be hashed.",
+            "password_plaintext": "The password string to be hashed. Leave empty to use the password from the database.",
             "rounds": "The computational cost of the hashing algorithm, default is 12."
     }
     },
@@ -18,7 +18,7 @@ algorithms = [
     {
         "algorithm": "argon2",
         "parameters": {
-            "password_plaintext": "The password string to be hashed.",
+            "password_plaintext": "The password string to be hashed. Leave empty to use the password from the database.",
             "t": "The time cost of the hashing algorithm, default is 2.",
             "m": "The memory cost of the hashing algorithm in kibibytes, default is 102400 (100 MB).",
             "p": "The number of parallel threads, default is 8.",
@@ -29,7 +29,7 @@ algorithms = [
     {
         "algorithm": "scrypt",
         "parameters": {
-            "password_plaintext": "The password string to be hashed.",
+            "password_plaintext": "The password string to be hashed. Leave empty to use the password from the database.",
             "N": "The CPU/memory cost parameter, default is 16384.",
             "r": "The block size parameter, default is 8.",
             "p": "The parallelization parameter, default is 1.",
@@ -41,7 +41,7 @@ algorithms = [
     {
         "algorithm": "pbkdf2_sha256",
         "parameters": {
-            "password_plaintext": "The password string to be hashed.",
+            "password_plaintext": "The password string to be hashed. Leave empty to use the password from the database.",
             "salt_bytes": "The length of the random salt in bytes, default is 16.",
             "dklen": "The length of the derived key, default is 32.",
             "hash_algo": "The underlying hash algorithm, such as `sha256` or `sha512`, default is sha256",
