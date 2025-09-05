@@ -82,7 +82,6 @@ CREATE TABLE IF NOT EXISTS "hash_generations" (
   "cpu_user_time_ms" DOUBLE PRECISION NOT NULL,
   "cpu_system_time_ms" DOUBLE PRECISION NOT NULL,
   "memory_rss_mb_start" DOUBLE PRECISION NOT NULL,
-  "memory_rss_mb_end" DOUBLE PRECISION NOT NULL,
   "memory_peak_mb_during_hash" DOUBLE PRECISION NOT NULL
 );
 
