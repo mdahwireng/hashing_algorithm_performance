@@ -1,0 +1,6 @@
+argon2-cffi
+bcrypt
+cpuinfo
+psutil
+sqlalchemy
+resource
