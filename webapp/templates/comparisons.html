@@ -33,8 +33,8 @@
                   {% for key, desc in params.items() %}
                     <div class="col-md-6">
                       <label class="form-label">{{ key }}</label>
-                      <input class="form-control" name="algo_{{ algo.id }}_{{ key }}" placeholder="{{ desc }}" {% if key == 'password_plaintext' %}readonly{% endif %}>
-                      <div class="form-text">{{ desc }}</div>
+                      <input class="form-control" name="algo_{{ algo.id }}_{{ key }}" {% if key == 'password_plaintext' %}disabled{% endif %} type="{{ desc.type }}">
+                      <div class="form-text">{{ desc.desc }}</div>
                     </div>
                   {% endfor %}
                 </div>
