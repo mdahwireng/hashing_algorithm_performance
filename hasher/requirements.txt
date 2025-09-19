@@ -1,0 +1,8 @@
+argon2-cffi
+bcrypt
+dotenv
+py-cpuinfo
+psutil
+sqlalchemy
+resource
+psycopg2-binary

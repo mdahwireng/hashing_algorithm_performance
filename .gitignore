@@ -1,3 +1,5 @@
 secrets/
 dataloader/data/
 */__pycache__/
+hasher/*.json
+hasher/*.pkl

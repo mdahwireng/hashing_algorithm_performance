@@ -46,6 +46,86 @@ services:
     ports:
       - "8085:8080"
     command: sh -c "pip install -r requirements.txt && python app.py"
+  
+  hasher_bcrypt:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ALGORITHM=bcrypt
+      - PASSWORD_SCORE_THRESHOLD=2
+    depends_on:
+      - web
+    volumes:
+      - ./hasher:/app
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && python main.py"
+
+  hasher_argon2:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ALGORITHM=argon2
+      - PASSWORD_SCORE_THRESHOLD=2
+    depends_on:
+      - web
+    volumes:
+      - ./hasher:/app
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && python main.py"
+
+  hasher_scrypt:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ALGORITHM=scrypt
+      - PASSWORD_SCORE_THRESHOLD=2
+    depends_on:
+      - web
+    volumes:
+      - ./hasher:/app
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && python main.py"
+
+  hasher_pbkdf2:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ALGORITHM=pbkdf2
+      - PASSWORD_SCORE_THRESHOLD=2
+    depends_on:
+      - web
+    volumes:
+      - ./hasher:/app
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && python main.py"
 
 
 
