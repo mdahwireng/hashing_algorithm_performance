@@ -118,7 +118,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_NAME=hash_store
-      - ALGORITHM=pbkdf2
+      - ALGORITHM=pbkdf2_sha256
       - PASSWORD_SCORE_THRESHOLD=2
     depends_on:
       - web

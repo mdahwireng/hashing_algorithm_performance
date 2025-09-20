@@ -3,14 +3,25 @@ from datetime import datetime, timezone
 import resource
 from PasswordHasher import PasswordHasher
 from utils import pickle_object
+import dotenv
+import os
+
+# import logging
+
+# logging.basicConfig(level=logging.INFO,
+#                     format='%(asctime)s - %(levelname)s - %(message)s')
+
+dotenv.load_dotenv(dotenv_path='./data/.env')
+algorithm = os.getenv('ALGORITHM')
 
 
 
 
 if __name__ == "__main__":
-    # json_file = json.load(open("parameters.json", "r"))
+    
+    json_file = json.load(open(f"{algorithm}_parameters.json", "r"))
 
-    json_file = pickle_object('-', 'parameters.pkl', mode='load')
+    # json_file = pickle_object('-', algorithm + '_parameters.pkl', mode='load')
     start_time_utc = datetime.now(timezone.utc)
     resource_usage_start = resource.getrusage(resource.RUSAGE_SELF)
     
@@ -31,8 +42,8 @@ if __name__ == "__main__":
     cpu_user_time_ms = cpu_user_time_ms_end - cpu_user_time_ms_start
     duration_ms = (end_time_utc - start_time_utc).total_seconds() * 1000
 
-    # results = json.load(open("results.json", "r"))
-    results = pickle_object('-', 'results.pkl', mode='load')
+    results = json.load(open(f"{algorithm}_results.json", "r"))
+    # results = pickle_object('-', algorithm + '_results.pkl', mode='load')
     results.update({
         "start_time_utc": start_time_utc.isoformat(),
         "end_time_utc": end_time_utc.isoformat(),
@@ -40,7 +51,9 @@ if __name__ == "__main__":
         "cpu_user_time_ms": cpu_user_time_ms,
         "cpu_system_time_ms": cpu_system_time_ms,
         "memory_rss_mb_start": memory_rss_mb_start,
-        "memory_peak_mb_during_hash": memory_peak_mb_during_hash
+        "memory_peak_mb_during_hash": memory_peak_mb_during_hash,
+        "generated_hash": generated_hash,
+        "salt": salt
     })
-    # json.dump(results, open("results.json", "w"))
-    pickle_object(results, 'results.pkl', mode='save')
+    json.dump(results, open(f"{algorithm}_results.json", "w"))
+    # pickle_object(results, algorithm + '_results.pkl', mode='save')

@@ -9,6 +9,12 @@ from utils import create_db_connection, get_db_password, db_query_generator, pic
 import dotenv
 import os
 import time
+import logging
+
+
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 
 dotenv.load_dotenv(dotenv_path='./data/.env')
@@ -92,7 +98,7 @@ insert_query = text(f"""
 
 if __name__ == "__main__":
 
-
+    logging.info(f"Working on experiment run id: {experiment_run_id} for algorithm: {algorithm}")
     parameters_json = dict()
 
     parameters_json['algorithm'] = algorithm
@@ -109,7 +115,8 @@ if __name__ == "__main__":
                 """)
     conn.execute(exp_run_status_update_query, {'status' : 'running', 'id': experiment_run_id})
     conn.commit()
-
+    
+    logging.info(f"Experiment run status updated to 'running' for id: {experiment_run_id}")
     
     run_start_time = 0
     for row in db_query_generator(conn, password_retrieve_query):
@@ -120,26 +127,32 @@ if __name__ == "__main__":
 
         parameters_json['password_plaintext'] = password_plaintext
 
-        # json.dump(parameters_json, open(f"parameters.json", "w"))
+        json.dump(parameters_json, open(f"{algorithm}_parameters.json", "w"))
 
-        pickle_object(parameters_json, 'parameters.pkl', mode='save')
+        logging.info(f"Processing password id: {password_id} for experiment run id: {experiment_run_id}")
 
-        results_json = {"experiment_run_id": experiment_run_id, "password__id": password_id }
+        # pickle_object(parameters_json, algorithm + '_parameters.pkl', mode='save')
 
-        # json.dump(results_json, open(f"results.json", "w"))
-        pickle_object(results_json, 'results.pkl', mode='save')
+        results_json = {"experiment_run_id": experiment_run_id, "password_id": password_id }
+
+        json.dump(results_json, open(f"{algorithm}_results.json", "w"))
+        # pickle_object(results_json, algorithm + '_results.pkl', mode='save')
+
+        logging.info(f"Invoking hasher.py for password id: {password_id} for experiment run id: {experiment_run_id}")
 
         subprocess.run(["python3", "hasher.py"], stderr=sys.stderr, stdout=sys.stdout, check=True)
 
-        # results_json = json.load(open('results.json', 'r'))
-        results_json = pickle_object('-', 'results.pkl', mode='load')
+        results_json = json.load(open(f"{algorithm}_results.json", 'r'))
+        # results_json = pickle_object('-', algorithm + '_results.pkl', mode='load')
+
+        logging.info(f"Hasher.py completed for password id: {password_id} for experiment run id: {experiment_run_id}")
 
         if run_start_time == 0 :
             run_start_time = results_json['start_time_utc']
         
         run_end_time = results_json['end_time_utc']
 
-        
+        logging.info(f"Inserting results into database for password id: {password_id} for experiment run id: {experiment_run_id}")
 
         insert_query_dict = {
             'experiment_run_id' : results_json['experiment_run_id'],
@@ -154,8 +167,14 @@ if __name__ == "__main__":
             'memory_rss_mb_start' : results_json['memory_rss_mb_start'],
             'memory_peak_mb_during_hash' : results_json['memory_peak_mb_during_hash']
         }
+
+        logging.info(f"Inserting results into database for password id: {password_id} for experiment run id: {experiment_run_id}")
         
         conn.execute(insert_query, insert_query_dict)
+
+        logging.info(f"Results inserted into database for password id: {password_id} for experiment run id: {experiment_run_id} - to be committed later")
+
+    logging.info(f"All passwords processed for experiment run id: {experiment_run_id}. Updating experiment run table.")
 
     cpu_info = cpuinfo.get_cpu_info()
     memory = psutil.virtual_memory()
@@ -186,6 +205,8 @@ if __name__ == "__main__":
                     WHERE
                         id = :id
                     """)
+    
+    
 
     placeholder_dict = {
         'start_time' : run_start_time, 
@@ -197,3 +218,4 @@ if __name__ == "__main__":
     
     conn.execute(exp_run_update_query, placeholder_dict)
     conn.commit()
+    logging.info(f"Experiment run status updated to 'completed' for id: {experiment_run_id}")

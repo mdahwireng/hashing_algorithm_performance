@@ -31,7 +31,7 @@ class PasswordHasher:
 
         # Dictionary to map algorithm names to their hashing methods.
         self.hasher_methods = {
-            'pbkdf2': self._hash_pbkdf2,
+            'pbkdf2_sha256': self._hash_pbkdf2,
             'bcrypt': self._hash_bcrypt,
             'scrypt': self._hash_scrypt,
             'argon2': self._hash_argon2
@@ -60,10 +60,10 @@ class PasswordHasher:
 
     def _hash_pbkdf2(self, password_plaintext, **kwargs):
         """Hashes a password using PBKDF2."""
-        iterations = kwargs.get('iterations', 100000)
-        dklen = kwargs.get('dklen', 32)
+        iterations = int(kwargs.get('iterations', 100000))
+        dklen = int(kwargs.get('dklen', 32))
         hash_algo = kwargs.get('hash_algo', 'sha256')
-        salt_length = kwargs.get('salt_bytes', 16)
+        salt_length = int(kwargs.get('salt_bytes', 16))
         salt_bytes = self._generate_salt(length=salt_length)
 
         hashed = hashlib.pbkdf2_hmac(
@@ -77,7 +77,7 @@ class PasswordHasher:
 
     def _hash_bcrypt(self, password_plaintext, **kwargs):
         """Hashes a password using Bcrypt."""
-        rounds = kwargs.get('rounds', 12)
+        rounds = int(kwargs.get('rounds', 12))
         salt_bytes = bcrypt.gensalt(rounds=rounds)
 
         hashed = bcrypt.hashpw(password_plaintext.encode('utf-8'), salt_bytes)
@@ -85,11 +85,11 @@ class PasswordHasher:
 
     def _hash_scrypt(self, password_plaintext, **kwargs):
         """Hashes a password using Scrypt."""
-        N = kwargs.get('N', 16384)
-        r = kwargs.get('r', 8)
-        p = kwargs.get('p', 1)
-        dklen = kwargs.get('dklen', 32)
-        salt_length = kwargs.get('salt_bytes', 16)
+        N = int(kwargs.get('N', 16384))
+        r = int(kwargs.get('r', 8))
+        p = int(kwargs.get('p', 1))
+        dklen = int(kwargs.get('dklen', 32))
+        salt_length = int(kwargs.get('salt_bytes', 16))
         salt_bytes = self._generate_salt(length=salt_length)
 
         hashed = hashlib.scrypt(
@@ -102,11 +102,11 @@ class PasswordHasher:
 
     def _hash_argon2(self, password_plaintext, **kwargs):
         """Hashes a password using Argon2."""
-        m = kwargs.get('m', 65536)
-        t = kwargs.get('t', 2)
-        p = kwargs.get('p', 1)
-        dklen = kwargs.get('dklen', 32)
-        salt_length = kwargs.get('salt_bytes', 16)
+        m = int(kwargs.get('m', 65536))
+        t = int(kwargs.get('t', 2))
+        p = int(kwargs.get('p', 1))
+        dklen = int(kwargs.get('dklen', 32))
+        salt_length = int(kwargs.get('salt_bytes', 16))
         salt_bytes = self._generate_salt(length=salt_length)
         
         ph = Argon2PasswordHasher(
