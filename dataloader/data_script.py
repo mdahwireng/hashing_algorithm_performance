@@ -60,6 +60,11 @@ df_dict = {"passwords":passwords, "source":source, "password_len":password_lengt
 logging.info("Creating DataFrame...")
 # Create DataFrame
 password_df = pd.DataFrame(df_dict)
+password_df.dropna(inplace=True)
+password_df.drop_duplicates(subset=['passwords'], inplace=True)
+password_df.reset_index(drop=True, inplace=True)
+
+logging.info(f"Password DataFrame shape: {password_df.shape}")
 
 # Run zxcvbn on passwords
 logging.info("Running zxcvbn on passwords...")
@@ -76,6 +81,8 @@ zxcvbn_output_keys = list(zxcvbn_output.keys())
 
 # dataframe for zxcvbn output for password
 zxcvbn_password_df = pd.DataFrame(zxcvbn_output[zxcvbn_output_keys[0]])
+zxcvbn_password_df.drop_duplicates(subset=['password'], inplace=True)
+zxcvbn_password_df.reset_index(drop=True, inplace=True)
 
 # dataframe for zxcvbn output for squences
 sequences_password_df = pd.DataFrame(zxcvbn_output[zxcvbn_output_keys[1]])
