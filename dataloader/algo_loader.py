@@ -68,7 +68,7 @@ algorithms = [
                     }, 
                 "N": 
                     {
-                        "desc" : "The CPU/memory cost parameter, default is 16384.",
+                        "desc" : "The CPU/memory cost parameter, default is 16384 (2^14). It must be a power of two greater than 1.",
                         "type": "integer"
                     },
                 "r": 

@@ -24,6 +24,7 @@ db_host = os.getenv('DB_HOST')
 db_port = os.getenv('DB_PORT')
 db_name = os.getenv('DB_NAME')
 algorithm = os.getenv('ALGORITHM')
+sample_limit = int(os.getenv('SAMPLE_LIMIT', '100000'))
 password_score_threshold = int(os.getenv('PASSWORD_SCORE_THRESHOLD', '0'))
 
 
@@ -61,7 +62,9 @@ password_retrieve_query = text(f"""
                 SELECT id, password
                 FROM passwords
                 WHERE score > {password_score_threshold} 
-                """)
+                ORDER BY RANDOM()
+                LIMIT :limit
+                     """)
 
 
 insert_query = text(f"""
@@ -119,6 +122,7 @@ if __name__ == "__main__":
     logging.info(f"Experiment run status updated to 'running' for id: {experiment_run_id}")
     
     run_start_time = 0
+    password_retrieve_query = password_retrieve_query.bindparams(limit=sample_limit)
     for row in db_query_generator(conn, password_retrieve_query):
         row = row._asdict()
         password_id = row['id']
