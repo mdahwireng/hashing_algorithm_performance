@@ -101,7 +101,7 @@ insert_query = text(f"""
 
 if __name__ == "__main__":
 
-    logging.info(f"Working on experiment run id: {experiment_run_id} for algorithm: {algorithm}")
+    logging.info(f"--------------------Working on experiment run id: {experiment_run_id} for algorithm: {algorithm}---------------")
     parameters_json = dict()
 
     parameters_json['algorithm'] = algorithm
@@ -123,7 +123,12 @@ if __name__ == "__main__":
     
     run_start_time = 0
     password_retrieve_query = password_retrieve_query.bindparams(limit=sample_limit)
+
+    count = 1
+
+    
     for row in db_query_generator(conn, password_retrieve_query):
+        logging.info(f"-----------------------Processing password {count} of up to {sample_limit} for experiment run id: {experiment_run_id}-------------------------------")
         row = row._asdict()
         password_id = row['id']
         password_plaintext = row['password']
@@ -176,7 +181,8 @@ if __name__ == "__main__":
         
         conn.execute(insert_query, insert_query_dict)
 
-        logging.info(f"Results inserted into database for password id: {password_id} for experiment run id: {experiment_run_id} - to be committed later")
+        logging.info(f"Results inserted into database for password id: {password_id} for experiment run id: {experiment_run_id} - to be committed later\n")
+        count += 1
 
     logging.info(f"All passwords processed for experiment run id: {experiment_run_id}. Updating experiment run table.")
 

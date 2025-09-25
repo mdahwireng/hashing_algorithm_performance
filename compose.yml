@@ -60,7 +60,7 @@ services:
       - DB_NAME=hash_store
       - ALGORITHM=bcrypt
       - PASSWORD_SCORE_THRESHOLD=2
-      - SAMPLE_LIMIT=300000
+      - SAMPLE_LIMIT=100000
     depends_on:
       - web
     volumes:
@@ -81,7 +81,7 @@ services:
       - DB_NAME=hash_store
       - ALGORITHM=argon2
       - PASSWORD_SCORE_THRESHOLD=2
-      - SAMPLE_LIMIT=300000
+      - SAMPLE_LIMIT=100000
     depends_on:
       - web
     volumes:
@@ -102,7 +102,7 @@ services:
       - DB_NAME=hash_store
       - ALGORITHM=scrypt
       - PASSWORD_SCORE_THRESHOLD=2
-      - SAMPLE_LIMIT=300000
+      - SAMPLE_LIMIT=100000
     depends_on:
       - web
     volumes:
@@ -123,7 +123,7 @@ services:
       - DB_NAME=hash_store
       - ALGORITHM=pbkdf2_sha256
       - PASSWORD_SCORE_THRESHOLD=2
-      - SAMPLE_LIMIT=300000
+      - SAMPLE_LIMIT=100000
     depends_on:
       - web
     volumes:
