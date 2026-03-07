@@ -12,8 +12,7 @@ import time
 import logging
 
 
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 
 
@@ -27,6 +26,12 @@ algorithm = os.getenv('ALGORITHM')
 sample_limit = int(os.getenv('SAMPLE_LIMIT', '100000'))
 password_score_threshold = int(os.getenv('PASSWORD_SCORE_THRESHOLD', '0'))
 
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler(f"experiment_run_{algorithm}.log"),
+                        logging.StreamHandler(sys.stdout)
+                    ])
 
 
 db_password = get_db_password()
