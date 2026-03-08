@@ -186,6 +186,10 @@ if __name__ == "__main__":
         
         conn.execute(insert_query, insert_query_dict)
 
+        if count % 1000 == 0:
+            conn.commit()
+            logging.info(f"Committed batch of 1000 records.")
+
         logging.info(f"Results inserted into database for password id: {password_id} for experiment run id: {experiment_run_id} - to be committed later\n")
         count += 1
 

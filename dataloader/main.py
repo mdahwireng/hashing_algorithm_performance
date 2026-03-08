@@ -116,3 +116,4 @@ elif data_in_db:
     print("Data already exists in the database. No action needed.")
 
 subprocess.run(['python3', 'algo_loader.py'], stdout=sys.stdout, stderr=sys.stderr, check=True)
+subprocess.run(['python3', 'attack_type_loader.py'], stdout=sys.stdout, stderr=sys.stderr, check=True)
