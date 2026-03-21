@@ -31,17 +31,20 @@ DB_PASS = get_db_password()
 ATTACK_TYPE_ID = int(os.environ.get("ATTACK_TYPE_ID", 1))
 CRACK_SAMPLE_LIMIT = int(os.environ.get("CRACK_SAMPLE_LIMIT", 100))
 
+# --- File Paths for Hashcat v7+ ---
 WORDLIST_PATH = "/tmp/db_wordlist.txt"
 HASH_FILE_PATH = "/tmp/target_hash.txt"
 POTFILE_PATH = "/tmp/hashcat.potfile"
-RULES_DIR = "/opt/hashcat-6.2.6/rules"  # Assuming you upgraded via Dockerfile as discussed
+HASHCAT_BIN = "/opt/hashcat/hashcat"   # Forcing the custom-built v7 binary
+RULES_DIR = "/opt/hashcat/rules"       # Using the v7 rules folder
 
 
 class HardwareMonitor:
-    """Runs in a background thread to poll CPU and GPU metrics while Hashcat executes."""
+    """Runs in a background thread to poll CPU, System RAM, and GPU metrics while Hashcat executes."""
     def __init__(self):
         self.running = False
         self.cpu_usages = []
+        self.ram_usages = []
         self.gpu_usages = []
         self.gpu_mems = []
         self.has_gpu = False
@@ -63,6 +66,10 @@ class HardwareMonitor:
         while self.running:
             self.cpu_usages.append(psutil.cpu_percent(interval=None))
             
+            # Poll System RAM usage in Megabytes
+            ram_info = psutil.virtual_memory()
+            self.ram_usages.append(ram_info.used / (1024 * 1024))
+            
             if self.has_gpu:
                 try:
                     handle = pynvml.nvmlDeviceGetHandleByIndex(0)
@@ -83,6 +90,8 @@ class HardwareMonitor:
         return {
             "cpu_avg": sum(self.cpu_usages) / len(self.cpu_usages) if self.cpu_usages else 0.0,
             "cpu_max": max(self.cpu_usages) if self.cpu_usages else 0.0,
+            "ram_avg": sum(self.ram_usages) / len(self.ram_usages) if self.ram_usages else 0.0,
+            "ram_max": max(self.ram_usages) if self.ram_usages else 0.0,
             "gpu_avg": sum(self.gpu_usages) / len(self.gpu_usages) if self.gpu_usages else 0.0,
             "gpu_max": max(self.gpu_usages) if self.gpu_usages else 0.0,
             "gpu_mem_avg": sum(self.gpu_mems) / len(self.gpu_mems) if self.gpu_mems else 0.0,
@@ -94,16 +103,17 @@ def get_db_connection():
     return psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS)
 
 
-def build_dynamic_wordlist(password_source):
-    """Streams a dynamically filtered wordlist tailored to the current hash's source."""
+def build_dynamic_wordlist(experiment_run_id):
+    """Streams a dynamically filtered wordlist containing ONLY the passwords used in this specific experiment run."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Filter by score > 2 AND the specific source
-    cursor.execute(
-        "SELECT password FROM passwords WHERE score > 2 AND source = %s",
-        (password_source,)
-    )
+    cursor.execute("""
+        SELECT DISTINCT p.password 
+        FROM passwords p
+        JOIN hash_generations hg ON hg.password_id = p.id
+        WHERE hg.experiment_run_id = %s
+    """, (experiment_run_id,))
     
     passwords = cursor.fetchall()
     count = len(passwords)
@@ -118,17 +128,13 @@ def build_dynamic_wordlist(password_source):
     return count
 
 
-def get_hashcat_module(algo_name, target_hash):
-    """Maps the algorithm name and hash prefix to its Hashcat module code."""
+def get_hashcat_module(algo_name):
+    """Maps the algorithm name to its Hashcat v7+ module code."""
     algo_lower = algo_name.lower().strip()
     
+    # In Hashcat v7+, Argon2 is strictly module 34000
     if algo_lower == "argon2" or algo_lower.startswith("argon2"):
-        if target_hash.startswith("$argon2id$"):
-            return "21400"
-        elif target_hash.startswith("$argon2i$"):
-            return "16400"
-        elif target_hash.startswith("$argon2d$"):
-            return "16300"
+        return "34000"  
             
     mapping = {
         "bcrypt": "3200",
@@ -143,8 +149,8 @@ def build_hashcat_command(module_code, attack_params):
     """Constructs the Hashcat subprocess command dynamically based on DB JSON parameters."""
     mode = attack_params.get("mode", "0")
     
-    # Base command: Binary, Module, Attack Mode, Target Hash
-    command = ["hashcat", "-m", module_code, "-a", mode, HASH_FILE_PATH]
+    # Base command explicitly calling the /opt/hashcat/hashcat binary
+    command = [HASHCAT_BIN, "-m", module_code, "-a", mode, HASH_FILE_PATH]
     
     if mode == "0":
         # Straight Dictionary Attack
@@ -156,12 +162,12 @@ def build_hashcat_command(module_code, attack_params):
             command.extend(["-r", rule_path])
             
     elif mode == "3":
-        # Mask Attack / Brute-Force (No wordlist required)
+        # Mask Attack / Brute-Force
         if "mask" in attack_params:
             command.append(attack_params["mask"])
             
     elif mode == "1":
-        # Combinator Attack (Requires two wordlists)
+        # Combinator Attack
         command.extend([WORDLIST_PATH, WORDLIST_PATH])
 
     # Append standard operational flags
@@ -178,7 +184,7 @@ def run_crack_job():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # 1. Fetch the Attack Parameters for the active ATTACK_TYPE_ID
+    # 1. Fetch the Attack Parameters
     cursor.execute("SELECT parameters_json FROM cracking_attack_types WHERE id = %s", (ATTACK_TYPE_ID,))
     attack_row = cursor.fetchone()
     if not attack_row:
@@ -189,18 +195,17 @@ def run_crack_job():
         
     attack_params = attack_row[0]
     
-    # 2. Retrieve one uncracked hash, enforcing the sample limit, joining the password source
+    # 2. Retrieve one uncracked hash, enforcing sample limits and isolating by ATTACK_TYPE_ID
     cursor.execute("""
         SELECT 
             hg.id, 
             hg.generated_hash, 
             a.name AS algorithm_name,
-            p.source AS password_source
+            er.id AS experiment_run_id
         FROM hash_generations hg
         JOIN experiment_runs er ON hg.experiment_run_id = er.id
         JOIN algorithm_configurations ac ON er.alg_config_id = ac.id
         JOIN algorithms a ON ac.algorithm_id = a.id
-        JOIN passwords p ON hg.password_id = p.id
         LEFT JOIN hash_cracking_results hcr ON hg.id = hcr.hash_generation_id 
                                             AND hcr.cracking_attack_type_id = %(attack_type)s
         WHERE hcr.id IS NULL
@@ -222,8 +227,8 @@ def run_crack_job():
         conn.close()
         return False
         
-    hg_id, target_hash, algo_name, password_source = job
-    module_code = get_hashcat_module(algo_name, target_hash)
+    hg_id, target_hash, algo_name, experiment_run_id = job
+    module_code = get_hashcat_module(algo_name)
     
     if not module_code:
         print(f"Error: Algorithm '{algo_name}' not mapped to a Hashcat module. Skipping.")
@@ -238,7 +243,7 @@ def run_crack_job():
         conn.close()
         return True
     
-    # 3. Prepare the environment (Clean hidden whitespace and literal quotes)
+    # 3. Prepare the environment
     clean_hash = target_hash.strip().strip('"').strip("'")
     with open(HASH_FILE_PATH, "w", encoding="utf-8") as f:
         f.write(clean_hash + "\n")
@@ -246,14 +251,13 @@ def run_crack_job():
     if os.path.exists(POTFILE_PATH):
         os.remove(POTFILE_PATH)
 
-    # 4. Build the targeted wordlist for this specific hash
-    print(f"Generating dynamic wordlist for source: '{password_source}'...")
-    wordlist_size = build_dynamic_wordlist(password_source)
-    print(f"Targeted wordlist created with {wordlist_size} passwords.")
+    # 4. Build the targeted wordlist
+    print(f"Generating dynamic wordlist for Run ID: {experiment_run_id}...")
+    wordlist_size = build_dynamic_wordlist(experiment_run_id)
+    print(f"Targeted wordlist created with {wordlist_size} guaranteed passwords.")
     
-    # If the wordlist is empty, skip to avoid a Hashcat crash
     if wordlist_size == 0:
-        print(f"Skipping ID {hg_id}: No passwords found for source '{password_source}' with score > 2.")
+        print(f"Skipping ID {hg_id}: No passwords found for Run ID '{experiment_run_id}'.")
         cursor.execute("""
             INSERT INTO hash_cracking_results (
                 hash_generation_id, cracking_attack_type_id, duration_seconds, 
@@ -268,7 +272,7 @@ def run_crack_job():
     # 5. Construct the dynamic command
     command = build_hashcat_command(module_code, attack_params)
 
-    print(f"Starting ID {hg_id} | DB Algo: {algo_name} | Module: {module_code} | Mode: {attack_params.get('mode')}")
+    print(f"Starting ID {hg_id} | DB Algo: {algo_name} | Module: {module_code} | Mode: {attack_params.get('mode')} | Attack ID: {ATTACK_TYPE_ID}")
     
     # 6. Start Telemetry and Execution
     monitor = HardwareMonitor()
@@ -278,9 +282,9 @@ def run_crack_job():
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     
     speed_hps = 0.0
-    error_log = [] # Array to catch Hashcat's raw error output
+    error_log = []
     
-    # Parse the machine-readable stdout to extract hashes-per-second or catch errors
+    # Parse the machine-readable stdout
     for line in process.stdout:
         if line.startswith("STATUS"):
             parts = line.split('\t')
@@ -290,14 +294,13 @@ def run_crack_job():
                 except ValueError:
                     pass
         else:
-            # If it is not a status update, it is likely a warning or error. Save it.
             if line.strip():
                 error_log.append(line.strip())
                     
     process.wait()
     duration = time.time() - start_time
     
-    # If the attack failed to launch and throughput is 0, print the error log
+    # If it failed to launch, dump the error log
     if speed_hps == 0.0:
         print(f"\n--- HASHCAT FATAL ERROR FOR ID {hg_id} ---")
         for err in error_log:
@@ -327,12 +330,15 @@ def run_crack_job():
             hash_generation_id, cracking_attack_type_id, duration_seconds, 
             hashes_per_second, cracked_status, cracked_password,
             cpu_usage_percent_avg, cpu_usage_percent_max,
+            ram_usage_mb_avg, ram_usage_mb_max,
             gpu_usage_percent_avg, gpu_usage_percent_max,
             gpu_memory_mb_avg, gpu_memory_mb_max
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         hg_id, ATTACK_TYPE_ID, duration, speed_hps, cracked_status, cracked_password,
-        metrics['cpu_avg'], metrics['cpu_max'], metrics['gpu_avg'], metrics['gpu_max'],
+        metrics['cpu_avg'], metrics['cpu_max'], 
+        metrics['ram_avg'], metrics['ram_max'],
+        metrics['gpu_avg'], metrics['gpu_max'],
         metrics['gpu_mem_avg'], metrics['gpu_mem_max']
     ))
     
@@ -343,7 +349,7 @@ def run_crack_job():
 
 
 if __name__ == "__main__":
-    print("Initializing Cracker Service...")
+    print(f"Initializing Cracker Service for Attack Type {ATTACK_TYPE_ID}...")
     
     # Wait briefly for the DB to be fully ready
     time.sleep(5) 
@@ -353,7 +359,7 @@ if __name__ == "__main__":
         try:
             has_jobs = run_crack_job()
             if not has_jobs:
-                # Sleep for 10 seconds if there are no hashes left to crack
+                # Sleep if there are no hashes left to crack for this specific attack type
                 time.sleep(10)
         except Exception as e:
             print(f"Error during cracking loop: {e}")

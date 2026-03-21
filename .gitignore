@@ -7,3 +7,4 @@ survey_analysis/data
 *.log
 *.csv
 survey_analysis/output
+cracker/*.txt
