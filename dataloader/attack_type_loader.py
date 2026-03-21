@@ -18,7 +18,7 @@ attack_types = [
         "description": "Dictionary attack using a ruleset. The cracker will apply rules to the dynamically generated DB wordlist.",
         "parameters_json": {
             "mode": "0",
-            "rule": "best64.rule"
+            "rule": "best66.rule"
         }
     },
     {

@@ -145,14 +145,15 @@ services:
       && python analyze.py"
 
 
-  hash_cracker:
-    image: nvidia/cuda:12.2.0-base-ubuntu22.04
+  cracker_node_1:
+    build:
+      context: ./cracker
+    image: custom-hashcat-v7:latest  # Docker tags the built image with this name
     restart: on-failure
     secrets:
       - db_password
     environment:
       - PYTHONUNBUFFERED=1
-      - DEBIAN_FRONTEND=noninteractive
       - DB_USER=postgres
       - DB_HOST=db
       - DB_PORT=5432
@@ -161,36 +162,18 @@ services:
       - CRACK_SAMPLE_LIMIT=100
     depends_on:
       - db
+    cpuset: "0-3"
     volumes:
       - ./cracker:/app
-    working_dir: /app
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-    command: >
-      sh -c "apt-get update && apt-get install -y build-essential python3 python3-pip pocl-opencl-icd clinfo wget ca-certificates 
-      && cd /opt 
-      && wget https://hashcat.net/files/hashcat-6.2.6.tar.gz 
-      && tar xzf hashcat-6.2.6.tar.gz 
-      && cd hashcat-6.2.6 
-      && make 
-      && ln -s /opt/hashcat-6.2.6/hashcat /usr/local/bin/hashcat 
-      && cd /app 
-      && pip3 install --no-cache-dir -r requirements.txt 
-      && python3 cracker_service.py"
-  
-  hash_cracker2:
-    image: nvidia/cuda:12.2.0-base-ubuntu22.04
+
+  # Worker Node 2
+  cracker_node_2:
+    image: custom-hashcat-v7:latest  # Bypasses the build step and uses Node 1's image
     restart: on-failure
     secrets:
       - db_password
     environment:
       - PYTHONUNBUFFERED=1
-      - DEBIAN_FRONTEND=noninteractive
       - DB_USER=postgres
       - DB_HOST=db
       - DB_PORT=5432
@@ -198,29 +181,29 @@ services:
       - ATTACK_TYPE_ID=2
       - CRACK_SAMPLE_LIMIT=100
     depends_on:
+      - cracker_node_1  # Ensures Node 1 finishes building the image before Node 2 boots
       - db
+    cpuset: "4-7"
     volumes:
       - ./cracker:/app
-    working_dir: /app
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-    command: >
-      sh -c "apt-get update && apt-get install -y build-essential python3 python3-pip pocl-opencl-icd clinfo wget ca-certificates 
-      && cd /opt 
-      && wget https://hashcat.net/files/hashcat-6.2.6.tar.gz 
-      && tar xzf hashcat-6.2.6.tar.gz 
-      && cd hashcat-6.2.6 
-      && make 
-      && ln -s /opt/hashcat-6.2.6/hashcat /usr/local/bin/hashcat 
-      && cd /app 
-      && pip3 install --no-cache-dir -r requirements.txt 
-      && python3 cracker_service.py"
 
+  
+  analyzer:
+    build: ./analyzer
+    image: ranking-analyzer:latest
+    profiles:
+      - report
+    depends_on:
+      - db
+    secrets:
+      - db_password
+    environment:
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+    volumes:
+      - ./reports:/app/reports
 
 
 

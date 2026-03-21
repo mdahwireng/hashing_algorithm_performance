@@ -107,7 +107,9 @@ CREATE TABLE IF NOT EXISTS "hash_cracking_results" (
   "gpu_usage_percent_avg" DOUBLE PRECISION,
   "gpu_usage_percent_max" DOUBLE PRECISION,
   "gpu_memory_mb_avg" DOUBLE PRECISION,
-  "gpu_memory_mb_max" DOUBLE PRECISION
+  "gpu_memory_mb_max" DOUBLE PRECISION,
+  "ram_usage_mb_avg" DOUBLE PRECISION,
+  "ram_usage_mb_max" DOUBLE PRECISION
 );
 
 -- The `ALTER TABLE` statements for adding foreign keys also need to be conditional.
