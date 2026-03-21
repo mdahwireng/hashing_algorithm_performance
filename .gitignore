@@ -8,3 +8,4 @@ survey_analysis/data
 *.csv
 survey_analysis/output
 cracker/*.txt
+.*
