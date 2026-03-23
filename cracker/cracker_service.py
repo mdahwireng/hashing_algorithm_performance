@@ -150,7 +150,7 @@ def build_hashcat_command(module_code, attack_params):
     mode = attack_params.get("mode", "0")
     
     # Base command explicitly calling the /opt/hashcat/hashcat binary
-    command = [HASHCAT_BIN, "-m", module_code, "-a", mode, HASH_FILE_PATH]
+    command = [HASHCAT_BIN, "-m", module_code, "-a", mode, HASH_FILE_PATH, "--self-test-disable"]
     
     if mode == "0":
         # Straight Dictionary Attack

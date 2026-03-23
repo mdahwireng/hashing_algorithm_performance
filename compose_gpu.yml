@@ -1,0 +1,237 @@
+services:
+  db:
+    image: postgres:latest
+    restart: always
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./startup_sql:/docker-entrypoint-initdb.d/
+    ports:
+      - "5439:5432"
+  
+  dataloader:
+    image: python:3.12-slim
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      
+    depends_on:
+      - db
+    volumes:
+      - ./dataloader:/app
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && python main.py"
+
+  web:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+    depends_on:
+      - dataloader
+    volumes:
+      - ./webapp:/app
+      - ./README.md:/app/README.md:ro
+    working_dir: /app
+    ports:
+      - "8085:8080"
+    command: sh -c "pip install -r requirements.txt && python app.py"
+  
+  hasher_bcrypt:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ALGORITHM=bcrypt
+      - PASSWORD_SCORE_THRESHOLD=3
+      - SAMPLE_LIMIT=100
+    depends_on:
+      - web
+    volumes:
+      - ./hasher:/app
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && python main.py"
+
+  hasher_argon2:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ALGORITHM=argon2
+      - PASSWORD_SCORE_THRESHOLD=3
+      - SAMPLE_LIMIT=100
+    depends_on:
+      - web
+    volumes:
+      - ./hasher:/app
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && python main.py"
+
+  hasher_scrypt:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ALGORITHM=scrypt
+      - PASSWORD_SCORE_THRESHOLD=3
+      - SAMPLE_LIMIT=100
+    depends_on:
+      - web
+    volumes:
+      - ./hasher:/app
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && python main.py"
+
+  hasher_pbkdf2:
+    image: python:3.12-slim
+    restart: always
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ALGORITHM=pbkdf2_sha256
+      - PASSWORD_SCORE_THRESHOLD=3
+      - SAMPLE_LIMIT=100
+    depends_on:
+      - web
+    volumes:
+      - ./hasher:/app
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && python main.py"
+
+  survey_analysis:
+    image: python:3.12-slim
+    volumes:
+      - ./survey_analysis:/app
+    working_dir: /app
+    
+    # Install system dependencies and Python packages
+    command: >
+      sh -c "apt-get update && apt-get install -y build-essential 
+      && pip install -r requirements.txt 
+      && pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz
+      && python analyze.py"
+
+
+  cracker_node_1:
+    build:
+      context: ./cracker
+      dockerfile: Dockerfile_gpu
+    image: custom-hashcat-v7:latest
+    restart: on-failure
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1  
+              capabilities: [gpu]
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ATTACK_TYPE_ID=1
+      - CRACK_SAMPLE_LIMIT=100
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    depends_on:
+      - db
+    cpuset: "0-3"
+    volumes:
+      - ./cracker:/app
+
+  # Worker Node 2
+  cracker_node_2:
+    image: custom-hashcat-v7:latest
+    restart: on-failure
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1  
+              capabilities: [gpu]
+    secrets:
+      - db_password
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+      - ATTACK_TYPE_ID=2
+      - CRACK_SAMPLE_LIMIT=100
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    depends_on:
+      - cracker_node_1  # Ensures Node 1 finishes building the image before Node 2 boots
+      - db
+    cpuset: "4-7"
+    volumes:
+      - ./cracker:/app
+
+  
+  analyzer:
+    build: ./analyzer
+    image: ranking-analyzer:latest
+    profiles:
+      - report
+    depends_on:
+      - db
+    secrets:
+      - db_password
+    environment:
+      - DB_USER=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=hash_store
+    volumes:
+      - ./reports:/app/reports
+
+
+
+volumes:
+  db_data:
+    driver: local
+
+    
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+

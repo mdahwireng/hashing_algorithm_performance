@@ -82,7 +82,8 @@ class PasswordHasher:
             password=password_plaintext.encode('utf-8'),
             salt=salt_bytes,
             n=N, r=r, p=p,
-            dklen=dklen
+            dklen=dklen,
+            maxmem=512 * 1024 * 1024
         )
         
         # Format for Hashcat Module 8900 (SCRYPT:N:r:p:base64_salt:base64_hash)

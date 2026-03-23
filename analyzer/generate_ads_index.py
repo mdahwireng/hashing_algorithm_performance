@@ -16,7 +16,6 @@ def get_db_password(secret_path='/run/secrets/db_password'):
         with open(secret_path, 'r') as f:
             return f.read().strip()
     except Exception:
-        # Fallback for local testing outside of Docker
         return "postgres"
 
 # Use Docker networking environment variables
@@ -62,9 +61,12 @@ matrix_user_auth = np.array([
     [1/7, 1/5, 1/2, 1  ]
 ])
 
-# --- 2. Database Extraction ---
-def fetch_and_aggregate_data():
-    conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS)
+# --- 2. Database Extraction Functions ---
+def get_db_connection():
+    return psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS)
+
+def fetch_aggregated_data():
+    """Fetches core benchmarking telemetry for ADS calculation."""
     query = """
         SELECT 
             a.name AS algorithm,
@@ -72,7 +74,8 @@ def fetch_and_aggregate_data():
             hg.duration_ms AS generation_time_ms,
             hcr.duration_seconds AS cracking_time_s,
             hcr.hashes_per_second AS hashes_per_second,
-            hcr.ram_usage_mb_max AS max_ram_mb
+            COALESCE(hcr.ram_usage_mb_max, 0) AS max_ram_mb,
+            COALESCE(hcr.gpu_memory_mb_max, 0) AS max_gpu_vram_mb
         FROM hash_cracking_results hcr
         JOIN hash_generations hg ON hcr.hash_generation_id = hg.id
         JOIN experiment_runs er ON hg.experiment_run_id = er.id
@@ -80,36 +83,106 @@ def fetch_and_aggregate_data():
         JOIN algorithms a ON ac.algorithm_id = a.id
         WHERE hcr.cracked_status = 'CRACKED'
     """
-    df_raw = pd.read_sql_query(query, conn)
-    conn.close()
+    with get_db_connection() as conn:
+        df_raw = pd.read_sql_query(query, conn)
     
-    # ADD THIS LINE: Convert the parsed dictionary back to a string so Pandas can group it
+    if df_raw.empty: return df_raw
+    
     df_raw['configuration'] = df_raw['configuration'].astype(str)
-    
-    # Group by algorithm and config to get mean performance across the cracked hashes
+    df_raw['total_memory_cost_mb'] = df_raw['max_ram_mb'] + df_raw['max_gpu_vram_mb']
     return df_raw.groupby(['algorithm', 'configuration']).mean(numeric_only=True).reset_index()
 
-
 def fetch_password_data():
-    """Pulls the raw passwords to analyze length and complexity distributions."""
-    conn = psycopg2.connect(host=DB_HOST, dbname=DB_NAME, user=DB_USER, password=DB_PASS)
-    query = "SELECT password FROM passwords;"
-    df_pass = pd.read_sql_query(query, conn)
-    conn.close()
-    
-    # Feature Engineering for Password Attributes
-    df_pass['length'] = df_pass['password'].apply(len)
-    df_pass['has_upper'] = df_pass['password'].apply(lambda x: any(c.isupper() for c in x))
-    df_pass['has_digit'] = df_pass['password'].apply(lambda x: any(c.isdigit() for c in x))
-    df_pass['has_special'] = df_pass['password'].apply(lambda x: any(c in string.punctuation for c in x))
-    
+    """Pulls raw passwords and schema-defined entropy metrics."""
+    query = "SELECT password, password_len, entropy FROM passwords;"
+    with get_db_connection() as conn:
+        df_pass = pd.read_sql_query(query, conn)
+    # Feature Engineering for complexity types
+    df_pass['has_upper'] = df_pass['password'].apply(lambda x: any(c.isupper() for c in str(x)))
+    df_pass['has_digit'] = df_pass['password'].apply(lambda x: any(c.isdigit() for c in str(x)))
+    df_pass['has_special'] = df_pass['password'].apply(lambda x: any(c in string.punctuation for c in str(x)))
     return df_pass
 
-# --- 3. Index Calculation ---
+def fetch_comparison_data():
+    """Pulls environment-specific baseline vs OWASP comparisons."""
+    query = """
+        SELECT 
+            c.name AS comparison_name,
+            a.name AS algorithm,
+            ac.parameters_json AS configuration,
+            AVG(hg.duration_ms) AS generation_time_ms,
+            AVG(hcr.duration_seconds) AS cracking_time_s
+        FROM comparisons c
+        JOIN comparison_algo_configs cac ON c.id = cac.comp_id
+        JOIN algorithm_configurations ac ON cac.algo_config_id = ac.id
+        JOIN algorithms a ON ac.algorithm_id = a.id
+        JOIN experiment_runs er ON ac.id = er.alg_config_id
+        JOIN hash_generations hg ON er.id = hg.experiment_run_id
+        JOIN hash_cracking_results hcr ON hg.id = hcr.hash_generation_id
+        WHERE hcr.cracked_status = 'CRACKED'
+        GROUP BY c.name, a.name, ac.parameters_json
+    """
+    with get_db_connection() as conn:
+        return pd.read_sql_query(query, conn)
+
+def fetch_entropy_performance_data():
+    """Pulls unaggregated hash cracking data mapped to password entropy."""
+    query = """
+        SELECT 
+            p.password_len, 
+            p.entropy, 
+            a.name AS algorithm,
+            hg.duration_ms AS generation_time_ms,
+            hcr.duration_seconds AS cracking_time_s
+        FROM passwords p
+        JOIN hash_generations hg ON p.id = hg.password_id
+        JOIN hash_cracking_results hcr ON hg.id = hcr.hash_generation_id
+        JOIN experiment_runs er ON hg.experiment_run_id = er.id
+        JOIN algorithm_configurations ac ON er.alg_config_id = ac.id
+        JOIN algorithms a ON ac.algorithm_id = a.id
+        WHERE hcr.cracked_status = 'CRACKED'
+    """
+    with get_db_connection() as conn:
+        return pd.read_sql_query(query, conn)
+
+def fetch_hardware_stability_data():
+    """Pulls defender generation memory telemetry for stability analysis."""
+    query = """
+        SELECT 
+            a.name AS algorithm,
+            ac.parameters_json AS configuration,
+            hg.memory_peak_mb_during_hash
+        FROM hash_generations hg
+        JOIN experiment_runs er ON hg.experiment_run_id = er.id
+        JOIN algorithm_configurations ac ON er.alg_config_id = ac.id
+        JOIN algorithms a ON ac.algorithm_id = a.id
+    """
+    with get_db_connection() as conn:
+        return pd.read_sql_query(query, conn)
+
+def fetch_attack_type_data():
+    """Pulls cracking efficacy by attack type (e.g. Mode 0 vs Mode 3)."""
+    query = """
+        SELECT 
+            cat.name AS attack_mode,
+            a.name AS algorithm,
+            AVG(hcr.duration_seconds) AS cracking_time_s
+        FROM cracking_attack_types cat
+        JOIN hash_cracking_results hcr ON cat.id = hcr.cracking_attack_type_id
+        JOIN hash_generations hg ON hcr.hash_generation_id = hg.id
+        JOIN experiment_runs er ON hg.experiment_run_id = er.id
+        JOIN algorithm_configurations ac ON er.alg_config_id = ac.id
+        JOIN algorithms a ON ac.algorithm_id = a.id
+        WHERE hcr.cracked_status = 'CRACKED'
+        GROUP BY cat.name, a.name
+    """
+    with get_db_connection() as conn:
+        return pd.read_sql_query(query, conn)
+
+# --- 3. Mathematical Calculations ---
 def calculate_ads(df, weights, profile_name):
     """Standardizes metrics and calculates the final ADS score."""
-    metrics = ['generation_time_ms', 'cracking_time_s', 'max_ram_mb', 'hashes_per_second']
-    
+    metrics = ['generation_time_ms', 'cracking_time_s', 'total_memory_cost_mb', 'hashes_per_second']
     scaler = StandardScaler()
     df_z = pd.DataFrame(scaler.fit_transform(df[metrics]), columns=metrics)
     
@@ -123,127 +196,158 @@ def calculate_ads(df, weights, profile_name):
     df['ADS_Score'] = (
         df_norm['generation_time_ms'] * weights[0] +
         df_norm['cracking_time_s'] * weights[1] +
-        df_norm['max_ram_mb'] * weights[2] +
+        df_norm['total_memory_cost_mb'] * weights[2] +
         df_norm['hashes_per_second'] * weights[3]
     )
     
     result_df = df[['algorithm', 'configuration', 'ADS_Score']].copy()
     result_df['Profile'] = profile_name
+    # Clean up config strings for plotting
+    result_df['config_short'] = result_df['configuration'].astype(str).str[:30] + "..."
     return result_df.sort_values(by='ADS_Score', ascending=False).round(2)
 
+def calculate_pareto_frontier(df):
+    """Identifies optimal configs (minimize Gen Time, maximize Crack Time)."""
+    # Sort by Defender Cost (Ascending) and Attacker Cost (Descending)
+    df_sorted = df.sort_values(['generation_time_ms', 'cracking_time_s'], ascending=[True, False])
+    pareto_front = []
+    max_crack_time_seen = -1
+    
+    for _, row in df_sorted.iterrows():
+        if row['cracking_time_s'] > max_crack_time_seen:
+            pareto_front.append(row)
+            max_crack_time_seen = row['cracking_time_s']
+            
+    return pd.DataFrame(pareto_front)
+
 # --- 4. Visualization Suite ---
-def generate_visualizations(df_telemetry, df_pass, df_secure, df_auth, out_dir="/app/reports"):
-    """Generates and saves the suite of 4 thesis plots."""
-    print("\nGenerating visualization suite...")
+def generate_visualizations(out_dir="/app/reports"):
+    print("\nGenerating comprehensive visualization suite...")
     os.makedirs(out_dir, exist_ok=True)
     
-    # Clean up the configuration strings for the charts (truncates long JSON)
-    df_telemetry['config_short'] = df_telemetry['configuration'].astype(str).str[:30] + "..."
-    df_secure['config_short'] = df_secure['configuration'].astype(str).str[:30] + "..."
-    df_auth['config_short'] = df_auth['configuration'].astype(str).str[:30] + "..."
+    # 1. Base Aggregated Telemetry
+    df_agg = fetch_aggregated_data()
+    if not df_agg.empty:
+        df_agg['config_short'] = df_agg['configuration'].astype(str).str[:30] + "..."
+        
+        # Plot 1: Asymmetric Trade-off
+        plt.figure(figsize=(10, 6))
+        sns.scatterplot(data=df_agg, x='generation_time_ms', y='cracking_time_s', 
+                        hue='algorithm', size='total_memory_cost_mb', sizes=(50, 500), alpha=0.8)
+        plt.xscale('log'); plt.yscale('log')
+        plt.title('Asymmetric Trade-off: Generation vs. Cracking Cost')
+        plt.xlabel('Defender Cost: Generation Time (ms) [Log]'); plt.ylabel('Attacker Cost: Cracking Time (s) [Log]')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/1_asymmetric_tradeoff.png", dpi=300); plt.close()
 
-    # Plot 1: Password Distribution
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    sns.histplot(data=df_pass, x='length', bins=range(min(df_pass['length']), max(df_pass['length']) + 2), 
-                 kde=True, ax=axes[0], color='skyblue')
-    axes[0].set_title('Password Length Distribution')
-    axes[0].set_xlabel('Character Length')
-    axes[0].set_ylabel('Frequency')
-    
-    complexity_counts = [df_pass['has_upper'].sum(), df_pass['has_digit'].sum(), df_pass['has_special'].sum()]
-    sns.barplot(x=['Uppercase', 'Digits', 'Symbols'], y=complexity_counts, ax=axes[1], hue=['Uppercase', 'Digits', 'Symbols'], palette='viridis', legend=False)
-    axes[1].set_title('Password Complexity Attributes')
-    axes[1].set_ylabel('Number of Passwords')
-    plt.tight_layout()
-    plt.savefig(f"{out_dir}/1_password_distribution.png", dpi=300)
-    plt.close()
+        # Plot 2: Pareto Frontier
+        df_pareto = calculate_pareto_frontier(df_agg)
+        plt.figure(figsize=(10, 6))
+        sns.scatterplot(data=df_agg, x='generation_time_ms', y='cracking_time_s', color='lightgrey', label='Suboptimal')
+        sns.lineplot(data=df_pareto, x='generation_time_ms', y='cracking_time_s', color='red', marker='o', label='Pareto Frontier')
+        plt.xscale('log'); plt.yscale('log')
+        plt.title('Pareto Frontier Optimization (Algorithm Configurations)')
+        plt.xlabel('Generation Time (ms) [Minimize]'); plt.ylabel('Cracking Time (s) [Maximize]')
+        plt.legend()
+        plt.tight_layout(); plt.savefig(f"{out_dir}/2_pareto_frontier.png", dpi=300); plt.close()
 
-    # Plot 2: Asymmetric Trade-off
-    
-    plt.figure(figsize=(10, 6))
-    sns.scatterplot(
-        data=df_telemetry, 
-        x='generation_time_ms', 
-        y='cracking_time_s', 
-        hue='algorithm', 
-        size='max_ram_mb', 
-        sizes=(50, 500), 
-        alpha=0.8, 
-        palette='Set1'
-    )
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.title('Asymmetric Trade-off: Generation Cost vs. Cracking Time')
-    plt.xlabel('Defender Cost: Generation Time (ms) [Log Scale]')
-    plt.ylabel('Attacker Cost: Cracking Time (s) [Log Scale]')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.tight_layout()
-    plt.savefig(f"{out_dir}/2_asymmetric_tradeoff.png", dpi=300)
-    plt.close()
+        # Plot 3: Hardware Strain
+        plt.figure(figsize=(12, 6))
+        df_agg['algo_config'] = df_agg['algorithm'] + "\n" + df_agg['config_short']
+        df_sorted_ram = df_agg.sort_values('total_memory_cost_mb', ascending=False)
+        sns.barplot(data=df_sorted_ram, x='algo_config', y='total_memory_cost_mb', hue='algorithm', dodge=False)
+        plt.xticks(rotation=45, ha='right')
+        plt.title('Attacker Hardware Strain (System + VRAM)')
+        plt.ylabel('Total Memory (MB)')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/3_hardware_strain.png", dpi=300); plt.close()
+        
+        # ADS Scores (Plots 4 & 5)
+        w_secure = calculate_ahp_weights(matrix_secure_storage, "Secure Storage")
+        w_auth = calculate_ahp_weights(matrix_user_auth, "Web API")
+        df_secure = calculate_ads(df_agg.copy(), w_secure, "Secure Storage")
+        df_auth = calculate_ads(df_agg.copy(), w_auth, "Web API")
+        
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+        sns.barplot(data=df_secure.head(5), y='config_short', x='ADS_Score', hue='algorithm', dodge=False, ax=axes[0], palette='magma')
+        axes[0].set_title('Top 5: Secure Storage Profile')
+        sns.barplot(data=df_auth.head(5), y='config_short', x='ADS_Score', hue='algorithm', dodge=False, ax=axes[1], palette='crest')
+        axes[1].set_title('Top 5: Web API Profile')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/4_ads_rankings.png", dpi=300); plt.close()
 
-    # Plot 3: Hardware Strain
-    plt.figure(figsize=(12, 6))
-    df_telemetry['algo_config'] = df_telemetry['algorithm'] + "\n" + df_telemetry['config_short']
-    df_sorted_ram = df_telemetry.sort_values('max_ram_mb', ascending=False)
-    sns.barplot(data=df_sorted_ram, x='algo_config', y='max_ram_mb', hue='algorithm', dodge=False, palette='mako')
-    plt.xticks(rotation=45, ha='right')
-    plt.title('Attacker Hardware Strain: Peak Memory Consumption')
-    plt.xlabel('Algorithm & Configuration')
-    plt.ylabel('Max RAM (MB)')
-    plt.legend(title='Algorithm')
-    plt.tight_layout()
-    plt.savefig(f"{out_dir}/3_hardware_strain.png", dpi=300)
-    plt.close()
+        # Plot 5: Profile ADS Shifts
+        df_combined_ads = pd.concat([df_secure, df_auth])
+        plt.figure(figsize=(10, 8))
+        sns.pointplot(data=df_combined_ads, x='Profile', y='ADS_Score', hue='config_short', markers="o", linestyles="-")
+        plt.title('ADS Score Shift by Environmental Profile')
+        plt.ylabel('Asymmetric Defense Score (0-100)'); plt.xlabel('')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/5_profile_ads_shifts.png", dpi=300); plt.close()
 
-    # Plot 4: Final Rankings
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    
-    sns.barplot(data=df_secure.head(5), y='config_short', x='ADS_Score', hue='algorithm', dodge=False, ax=axes[0], palette='magma')
-    axes[0].set_title('Top 5: Secure Storage Profile')
-    axes[0].set_xlabel('Asymmetric Defense Score (ADS)')
-    axes[0].set_ylabel('')
-    
-    sns.barplot(data=df_auth.head(5), y='config_short', x='ADS_Score', hue='algorithm', dodge=False, ax=axes[1], palette='crest')
-    axes[1].set_title('Top 5: Web API Profile')
-    axes[1].set_xlabel('Asymmetric Defense Score (ADS)')
-    axes[1].set_ylabel('')
-    
-    plt.tight_layout()
-    plt.savefig(f"{out_dir}/4_ads_rankings.png", dpi=300)
-    plt.close()
+    # 6. Password Complexity & Distribution
+    df_pass = fetch_password_data()
+    if not df_pass.empty:
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        sns.histplot(data=df_pass, x='password_len', kde=True, ax=axes[0], color='skyblue')
+        axes[0].set_title('Password Length Distribution')
+        axes[0].set_xlabel('Character Length')
+        
+        comp_counts = [df_pass['has_upper'].sum(), df_pass['has_digit'].sum(), df_pass['has_special'].sum()]
+        sns.barplot(x=['Uppercase', 'Digits', 'Symbols'], y=comp_counts, ax=axes[1], palette='viridis')
+        axes[1].set_title('Password Complexity Attributes')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/6_password_distribution.png", dpi=300); plt.close()
 
-# --- 5. Main Execution & Export ---
+    # 7 & 8. Entropy and Length impacts
+    df_ent = fetch_entropy_performance_data()
+    if not df_ent.empty:
+        plt.figure(figsize=(10, 6))
+        sns.lmplot(data=df_ent, x='entropy', y='cracking_time_s', hue='algorithm', scatter_kws={'alpha':0.5}, aspect=1.5)
+        plt.yscale('log')
+        plt.title('Impact of Password Entropy on Cracking Time')
+        plt.xlabel('Password Entropy (Bits)'); plt.ylabel('Cracking Time (s) [Log]')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/7_entropy_vs_cracking.png", dpi=300); plt.close('all')
+
+        plt.figure(figsize=(12, 6))
+        sns.boxenplot(data=df_ent, x='password_len', y='generation_time_ms', hue='algorithm')
+        plt.title('Impact of Password Length on Generation Cost')
+        plt.xlabel('Password Length (Characters)'); plt.ylabel('Generation Time (ms)')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/8_length_vs_generation.png", dpi=300); plt.close()
+
+    # 9. Comparison Groups (Baseline vs OWASP)
+    df_comp = fetch_comparison_data()
+    if not df_comp.empty:
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+        sns.barplot(data=df_comp, x='algorithm', y='generation_time_ms', hue='comparison_name', ax=axes[0], palette='viridis')
+        axes[0].set_title('Defender Cost: Gen Time by Environment')
+        sns.barplot(data=df_comp, x='algorithm', y='cracking_time_s', hue='comparison_name', ax=axes[1], palette='magma')
+        axes[1].set_yscale('log')
+        axes[1].set_title('Attacker Cost: Crack Time by Environment (Log)')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/9_environment_comparisons.png", dpi=300); plt.close()
+
+    # 10. Hardware Stability (Defender)
+    df_stab = fetch_hardware_stability_data()
+    if not df_stab.empty:
+        plt.figure(figsize=(12, 6))
+        sns.boxplot(data=df_stab, x='algorithm', y='memory_peak_mb_during_hash', palette='coolwarm')
+        plt.title('Defender Hardware Stability: Memory Variance During Hashing')
+        plt.ylabel('Peak RAM Usage (MB)')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/10_defender_hardware_stability.png", dpi=300); plt.close()
+
+    # 11. Attack Mode Efficacy
+    df_attack = fetch_attack_type_data()
+    if not df_attack.empty:
+        plt.figure(figsize=(10, 6))
+        sns.barplot(data=df_attack, x='algorithm', y='cracking_time_s', hue='attack_mode', palette='Set2')
+        plt.yscale('log')
+        plt.title('Attack Mode Efficacy: Cracking Time Variance')
+        plt.ylabel('Cracking Time (s) [Log]')
+        plt.tight_layout(); plt.savefig(f"{out_dir}/11_attack_mode_efficacy.png", dpi=300); plt.close()
+
+# --- 5. Main Execution ---
 if __name__ == "__main__":
     out_dir = "/app/reports"
-    print("Extracting and aggregating database telemetry...")
-    
-    df_aggregated = fetch_and_aggregate_data()
-    
-    if df_aggregated.empty:
-        print("No cracked results found. Run your Hashcat nodes first!")
-    else:
-        # AHP Calculation
-        weights_secure = calculate_ahp_weights(matrix_secure_storage, "Secure Storage")
-        weights_auth = calculate_ahp_weights(matrix_user_auth, "User-Friendly Authentication")
-        
-        # ADS Generation
-        df_secure = calculate_ads(df_aggregated.copy(), weights_secure, "Secure Storage")
-        df_auth = calculate_ads(df_aggregated.copy(), weights_auth, "User-Friendly Authentication")
-        
-        # Console Output
-        print("\nTOP RANKINGS: SECURE STORAGE PROFILE")
-        print(df_secure[['algorithm', 'configuration', 'ADS_Score']].head(10).to_string(index=False))
-        
-        print("\nTOP RANKINGS: USER-FRIENDLY AUTHENTICATION PROFILE")
-        print(df_auth[['algorithm', 'configuration', 'ADS_Score']].head(10).to_string(index=False))
-        
-        # File Exports
-        os.makedirs(out_dir, exist_ok=True)
-        df_secure.to_csv(f"{out_dir}/secure_storage_rankings.csv", index=False)
-        df_auth.to_csv(f"{out_dir}/user_auth_rankings.csv", index=False)
-        
-        # Generate and save the plots
-        df_passwords = fetch_password_data()
-        generate_visualizations(df_aggregated, df_passwords, df_secure, df_auth, out_dir)
-        
-        print(f"\nSuccess: CSV reports and PNG visualizations successfully exported to {out_dir}/")
+    print("Extracting and aggregating multidimensional telemetry...")
+    try:
+        generate_visualizations(out_dir)
+        print(f"\nSuccess: 11-Plot Thesis Visualization Suite successfully exported to {out_dir}/")
+    except Exception as e:
+        print(f"Error during analysis: {e}")
